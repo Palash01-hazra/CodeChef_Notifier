@@ -1,127 +1,79 @@
-var problem_details = {};
-chrome.runtime.onConnect.addListener(function(port) {
-  port.onMessage.addListener(function(msg) {
-    problem_details=msg;
-    console.log(problem_details);
-  });
+let problem_details = {};
+
+// Listen for messages from content script
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "problem") {
+    problem_details = msg.data;
+    console.log("Received problem details:", problem_details);
+  }
 });
-// function sendMessagetToGetInfo(url, id, xcsrf){
-//
-//     chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-//         var activeTabId=tabs[0].id;
-//         // var problem_details = {};
-//         // var problem_url = url;
-//
-//     });
-//
-//
-// }
-//
-function checkResult(url, id, xcsrf, problem_details, problem_url){
-  $.ajax({
 
-    url: url,
-
-    dataType: "json",
-
+// Function to repeatedly check for verdict
+function checkResult(url, id, xcsrf, problem_details, problem_url) {
+  fetch(url, {
+    method: "GET",
     headers: {
-      "x-csrf-token" : xcsrf
-    },
+      "x-csrf-token": xcsrf
+    }
+  })
+    .then(response => response.json())
+    .then(data => {
+      console.log("Verdict:", data.result_code);
 
-    /*
-    * function to handle success of XHR request
-    * check if the response shows verdict available
-    * if verdict available then notify user else
-    * user setTimeout function to do recursive call
-    * to this function after some seconds.
-    */
-    success: function(data, status, XHR){
-        console.log(status, data.result_code);
-
-        if(data.result_code == "wait"){
+      if (data.result_code === "wait") {
+        setTimeout(() => {
           checkResult(url, id, xcsrf, problem_details, problem_url);
-        }
-        else{
-          var notify_details  = {
-          type: "list",
-          title: "Problem Name: "+problem_details.name,
-          message: "Verdict: "+data.result_code+".",
+        }, 3000); // check every 3s
+      } else {
+        chrome.notifications.create({
+          type: "basic",
           iconUrl: "logo.png",
-          items: [{title: "Verdict:", message:""+data.result_code+""},
-                  { title: "Id: ", message: ""+problem_details.id+""},
-                  { title: "Time: ", message: ""+data.time+""}]
-         }
-
-         chrome.notifications.create(notify_details);
-
-          //  chrome.notifications.onButtonClicked.addListener(function(problem_url){
-          //   console.log(problem_url);
-          //   chrome.tabs.create({
-          //     url : problem_url
-          //   });
-          //  });
-        }
-
-    },
-
-    /* function to handle errors*/
-    error: function(XHR, status, error){
-      console.log(error, status, XHR);
-    }
-});
+          title: `Problem: ${problem_details.name}`,
+          message: `Verdict: ${data.result_code}\nID: ${problem_details.id}\nTime: ${data.time}`,
+          priority: 1
+        });
+      }
+    })
+    .catch(error => {
+      console.error("Error while checking result:", error);
+    });
 }
-//
-//
-//
-//
-chrome.webRequest.onBeforeSendHeaders.addListener((details) =>{
 
-    // check the URL from details object
-    //  if the url matches the required codechef url then
-    //  extract the submission id from the url
+// Listen for CodeChef submission requests
+chrome.webRequest.onBeforeSendHeaders.addListener(
+  (details) => {
     const url = new URL(details.url);
-    //url.search="?solution_id=53120644"... URL's parameter string
 
-    if(url.search.length > 0){
+    if (url.search.length > 0) {
+      const id = url.searchParams.get("solution_id");
 
-
-      let id = url.searchParams.get('solution_id');
-      let xcsrf =  details.requestHeaders[2].value;
-
-
-      var store={};
-      store[id]=id;
-
-
-      // check if a request with that submission id is already present in your storage
-      //  The above check is necessary because codechef repeatedly sends this
-      //  request until the result is obtained.
-
-
-
-      chrome.storage.sync.get(id,function(key_values){
-
-        if(Object.keys(key_values).length!=0)
-        {
-            //Not gonna save this again, babes!
-            // console.log('submission id already saved',key_values[id]);
+      let xcsrf = "";
+      for (const header of details.requestHeaders) {
+        if (header.name.toLowerCase() === "x-csrf-token") {
+          xcsrf = header.value;
+          break;
         }
-        else{
-          chrome.storage.sync.set(store, function() {
-            //oops have'nt seen this before, let's save it!
-            // console.log('Value is now set to ' + id);
+      }
 
+      const store = {};
+      store[id] = id;
+
+      chrome.storage.sync.get(id, function (key_values) {
+        if (Object.keys(key_values).length !== 0) {
+          // Already tracked this submission ID
+          return;
+        } else {
+          // New submission, store and check
+          chrome.storage.sync.set(store, function () {
+            checkResult(url, id, xcsrf, problem_details, url.href);
           });
-          checkResult(url, id, xcsrf, problem_details,url);
-          // sendMessagetToGetInfo(url, id, xcsrf);
         }
-      })
+      });
     }
-
-
-},
-{
-    urls : ["https://www.codechef.com/api/ide/submit*"],
-    types : ["xmlhttprequest"]
-},
-["requestHeaders"]);
+  },
+  {
+    urls: ["https://www.codechef.com/api/ide/submit*"],
+    types: ["xmlhttprequest"]
+  },
+  ["requestHeaders"]
+);
