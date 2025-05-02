@@ -46,7 +46,7 @@ function checkResult(url, id, xcsrf, problem_details, problem_url){
           type: "list",
           title: "Problem Name: "+problem_details.name,
           message: "Verdict: "+data.result_code+".",
-          iconUrl: "logo.jpg",
+          iconUrl: "logo.png",
           items: [{title: "Verdict:", message:""+data.result_code+""},
                   { title: "Id: ", message: ""+problem_details.id+""},
                   { title: "Time: ", message: ""+data.time+""}]
